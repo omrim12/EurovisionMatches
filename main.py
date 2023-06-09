@@ -1,3 +1,4 @@
+import os
 import pandas as pd
 from pandas import DataFrame
 import itertools as it
@@ -76,23 +77,16 @@ def main():
                                                                                       votes_euro_a_b_year)
         regression_df[str(year)] = matches_euro_data_in_year
 
-    # visualize data with matplotlib
-    
-    print(regression_df)
+    # save regression dataframe
+    regression_df.to_csv(os.path.join(os.getcwd(), "regression_data.csv"))
 
+    # TODO: visualize data with matplotlib
+    all_matches_votes = []
 
-"""
-regression dataframe:
+    # TODO: calculate regression curve to visualize correlation
 
-Country A | Country B | year_1 | .... | year_k
-----------------------------------------------
-X1         | Y1       | (m, v) | .... | (m, v)
-.
-.
-.
-Xn         | Yn       | (m, v) | .... | (m, v)
+    # TODO: visualize correlation and make conclusions
 
-"""
 
 if __name__ == '__main__':
     main()
