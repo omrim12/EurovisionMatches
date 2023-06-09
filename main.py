@@ -8,7 +8,7 @@ import numpy as np
 regression_data_filename = os.path.join(os.getcwd(), "regression_data.csv")
 
 
-def mount_data(regression_csv_path: str) -> (pd.DataFrame, int, int):
+def mount_data(regression_csv_path: str):
     YEAR_LEN = 4
 
     # load dataframes
