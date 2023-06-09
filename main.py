@@ -5,13 +5,22 @@ import itertools as it
 import matplotlib.pyplot as plt
 import numpy as np
 
+regression_data_filename = os.path.join(os.getcwd(), "regression_data.csv")
 
-def main():
+
+def mount_data(regression_csv_path: str) -> (pd.DataFrame, int, int):
     YEAR_LEN = 4
-    APPEAR_THRESH = 10
+
     # load dataframes
     matches_df = pd.read_csv("results.csv")
     eurovision_df = pd.read_csv("eurovision.csv")
+
+    # get years min + max borders
+    min_year = eurovision_df['Year'].min()
+    max_year = eurovision_df['Year'].max()
+
+    if os.path.exists(regression_data_filename):
+        return pd.read_csv(regression_csv_path), min_year, max_year
 
     # modify matches dates in dataframes to hold only year value
     matches_df['date'] = matches_df['date'].str[:YEAR_LEN]
@@ -27,8 +36,6 @@ def main():
     eurovision_df = eurovision_df.rename(columns={points_col_title: points_col_title.strip()})
 
     # extract all relevant years from matches dataframe
-    min_year = eurovision_df['Year'].min()
-    max_year = eurovision_df['Year'].max()
     matches_df = matches_df[(matches_df['date'] >= str(min_year)) &
                             (matches_df['date'] <= str(max_year))]
 
@@ -85,14 +92,50 @@ def main():
         regression_df[votes_col_name] = votes_in_year
 
     # save regression dataframe
-    regression_df.to_csv(os.path.join(os.getcwd(), "regression_data.csv"))
+    regression_df.to_csv(regression_data_filename)
 
+    return regression_df, min_year, max_year
+
+
+def examine_regression(regression_df: pd.DataFrame, min_year, max_year):
     # TODO: visualize data with matplotlib
-    all_matches_votes = []
+    # Assuming your DataFrame is named 'df'
+    # Extract the columns for years, votes, and matches
+    years = regression_df.columns[3::2].str[:4]
+    votes = regression_df.iloc[:, 4::2].melt()['value']
+    matches = regression_df.iloc[:, 3::2].melt()['value']
+
+    # Visualize data
+    print(years.shape)
+    print(votes.shape)
+    print(matches.shape)
+
+    # TODO: fix scatter
+    plt.scatter(years, matches, label='Matches')
+    plt.scatter(years, votes, label='Votes')
+
+    # Set plot title and labels
+    plt.title('Relationship between Votes and Matches over the Years')
+    plt.xlabel('Year')
+    plt.ylabel('Count')
+
+    # Add a legend
+    plt.legend()
+
+    # Show the plot
+    plt.show()
 
     # TODO: calculate regression curve to visualize correlation
 
     # TODO: visualize correlation and make conclusions
+
+
+def main():
+    # mount regression of matches X eurovision votes dataframe
+    regression_df, min_year, max_year = mount_data(regression_csv_path=regression_data_filename)
+
+    # analyze regression between matches X eurovision votes
+    examine_regression(regression_df=regression_df, min_year=min_year, max_year=max_year)
 
 
 if __name__ == '__main__':
