@@ -3,6 +3,7 @@ import pandas as pd
 from pandas import DataFrame
 import itertools as it
 import matplotlib.pyplot as plt
+import numpy as np
 
 
 def main():
@@ -54,7 +55,7 @@ def main():
     # Create regression DataFrame with x, y domains values
     regression_df = DataFrame(country_pairs, columns=["Country_A", "Country_B"])
     for year in range(min_year, max_year + 1):
-        matches_euro_data_in_year = pd.Series()
+        matches_euro_data_in_year = pd.Series(index=np.arange(len(country_pairs)), name=str(year))
         for country_a, country_b in country_pairs:
             # count number of matches between country a and b in current year
             matches_a_b = matches_df[(((matches_df['away_team'] == country_a) &
