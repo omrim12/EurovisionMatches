@@ -55,7 +55,10 @@ def main():
     # Create regression DataFrame with x, y domains values
     regression_df = DataFrame(country_pairs, columns=["Country_A", "Country_B"])
     for year in range(min_year, max_year + 1):
-        matches_euro_data_in_year = pd.Series(index=np.arange(len(country_pairs)), name=str(year))
+        matches_col_name = f"{str(year)}_matches"
+        votes_col_name = f"{str(year)}_votes"
+        matches_in_year = pd.Series(name=matches_col_name, index=range(len(country_pairs)))
+        votes_in_year = pd.Series(name=votes_col_name, index=range(len(country_pairs)))
         for country_a, country_b in country_pairs:
             # count number of matches between country a and b in current year
             matches_a_b = matches_df[(((matches_df['away_team'] == country_a) &
@@ -74,9 +77,12 @@ def main():
             votes_euro_a_b_year = sum(euro_a_b[euro_a_b['Year'] == year]['Points'])
 
             # create (m, v) point (m = friendly matches, v = sum of mutual votes) for country a and b in current year
-            matches_euro_data_in_year[country_pairs.index((country_a, country_b))] = (num_matches_a_b_year,
-                                                                                      votes_euro_a_b_year)
-        regression_df[str(year)] = matches_euro_data_in_year
+            country_pair_index = country_pairs.index((country_a, country_b))
+            matches_in_year[country_pair_index] = num_matches_a_b_year
+            votes_in_year[country_pair_index] = votes_euro_a_b_year
+
+        regression_df[matches_col_name] = matches_in_year
+        regression_df[votes_col_name] = votes_in_year
 
     # save regression dataframe
     regression_df.to_csv(os.path.join(os.getcwd(), "regression_data.csv"))
