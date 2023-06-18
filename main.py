@@ -1,141 +1,106 @@
 import os
 import pandas as pd
 from pandas import DataFrame
-import itertools as it
 import matplotlib.pyplot as plt
-import numpy as np
+from sklearn.linear_model import LinearRegression
 
-regression_data_filename = os.path.join(os.getcwd(), "regression_data.csv")
+COUNTRY_POINTS_BANK = sum([1, 2, 3, 4, 5, 6, 7, 8, 10, 12])
 
 
-def mount_data(regression_csv_path: str):
-    YEAR_LEN = 4
-
-    # load dataframes
-    matches_df = pd.read_csv("results.csv")
+def mount_data(top_n: int):
+    # load eurovision dataframe
     eurovision_df = pd.read_csv("eurovision.csv")
 
-    # get years min + max borders
-    min_year = eurovision_df['Year'].min()
-    max_year = eurovision_df['Year'].max()
-
-    if os.path.exists(regression_data_filename):
-        return pd.read_csv(regression_csv_path), min_year, max_year
-
-    # modify matches dates in dataframes to hold only year value
-    matches_df['date'] = matches_df['date'].str[:YEAR_LEN]
-
-    # filter tournament type to be friendly only in matches dataframe
-    matches_df = matches_df[matches_df["tournament"] == "Friendly"]
-
     # filter all eurovision scoring metric where a country voted for herself
-    eurovision_df = eurovision_df[eurovision_df['From country'] != eurovision_df['To country']]
+    eurovision_df = eurovision_df[eurovision_df['Duplicate'] != 'x']
+
+    # filter semi-final rows
+    eurovision_df = eurovision_df[eurovision_df["(semi-) final"] == 'f']
+
+    # remove years with televoting (4 years in total) TODO: maybe add them back ?
+    televote_years = set(eurovision_df[(eurovision_df["Jury or Televoting"] == "T")]["Year"].unique())
+    diff_from_to_years = set()
+    for year, euro in eurovision_df.groupby('Year'):
+        if set(euro['From country'].unique()) != set(euro['To country'].unique()):
+            diff_from_to_years.add(year)
+    filter_years = televote_years.union(diff_from_to_years)
+    eurovision_df = eurovision_df[~eurovision_df["Year"].isin(filter_years)]
 
     # fix Points column appearance (strip trailing spaces from column title)
     points_col_title = 'Points      '
     eurovision_df = eurovision_df.rename(columns={points_col_title: points_col_title.strip()})
 
-    # extract all relevant years from matches dataframe
-    matches_df = matches_df[(matches_df['date'] >= str(min_year)) &
-                            (matches_df['date'] <= str(max_year))]
+    # create regression dataframes
+    euro_countries = eurovision_df["From country"].unique()
+    euro_years = eurovision_df["Year"].unique()
+    points_df = DataFrame(index=euro_countries, columns=euro_years)
+    topn_vote_df = DataFrame(index=euro_countries, columns=euro_years)
+    for year in euro_years:
+        # create points (based on received points)
+        # per country over years DataFrame
+        points_per_country_in_year = eurovision_df[eurovision_df["Year"] == year].groupby(['To country'])[
+            'Points'].sum()
+        points_df.loc[:, year] = points_per_country_in_year
 
-    # get all participating eurovision countries (received and supplied votes)
-    euro_countries = list(set(eurovision_df['To country']).intersection(set(eurovision_df['From country'])))
+        # extract top N countries in euro this year
+        _top_n = points_per_country_in_year.sort_values().tail(top_n).index[::-1]
 
-    # clean matches and eurovision dataframes to hold only countries participating in eurovision and matches
-    matches_df = matches_df[(matches_df['away_team'].isin(euro_countries)) &
-                            (matches_df['home_team'].isin(euro_countries))]
-    eurovision_df = eurovision_df[(eurovision_df['From country'].isin(matches_df['away_team'])) |
-                                  (eurovision_df['From country'].isin(matches_df['home_team']))]
+        # TODO: might need to analyze a different feature
+        # create top N votings rates per country over years dataframe.
+        # (i.e. points given to top N countries divided in total points given)
+        vote_cols = ['To country', 'Points']
+        for from_country, points_given in \
+                eurovision_df[eurovision_df["Year"] == year].groupby(['From country'])[vote_cols]:
+            topn_voted_countries = list(
+                set(points_given[points_given["Points"] > 0]['To country']).intersection(set(_top_n)))
+            topn_votes_rate = sum(
+                points_given[points_given["To country"].isin(topn_voted_countries)]['Points']) / COUNTRY_POINTS_BANK
+            topn_vote_df.loc[from_country, year] = topn_votes_rate
 
-    # create all pairs of countries who participated both in a mutual vote and a match
-    euro_pairs = set(it.product(eurovision_df['From country'].unique(), eurovision_df['To country'].unique()))
-    team_pairs = set(it.product(matches_df['away_team'].unique(), matches_df['home_team'].unique()))
-
-    # TODO: check if country duplicates + a == b case can be done with pandas methods
-    # filtering duplicates and same country cases
-    country_pairs = []
-    for (a, b) in list(euro_pairs.intersection(team_pairs)):
-        if (b, a) not in country_pairs and a != b:
-            country_pairs.append((a, b))
-
-    # Create regression DataFrame with x, y domains values
-    regression_df = DataFrame(country_pairs, columns=["Country_A", "Country_B"])
-    for year in range(min_year, max_year + 1):
-        matches_col_name = f"{str(year)}_matches"
-        votes_col_name = f"{str(year)}_votes"
-        matches_in_year = pd.Series(name=matches_col_name, index=range(len(country_pairs)))
-        votes_in_year = pd.Series(name=votes_col_name, index=range(len(country_pairs)))
-        for country_a, country_b in country_pairs:
-            # count number of matches between country a and b in current year
-            matches_a_b = matches_df[(((matches_df['away_team'] == country_a) &
-                                       (matches_df['home_team'] == country_b)) |
-                                      ((matches_df['away_team'] == country_b) &
-                                       (matches_df['home_team'] == country_a))) &
-                                     (matches_df['date'] == str(year))
-                                     ]
-            num_matches_a_b_year = len(matches_a_b[matches_a_b['date'] == str(year)])
-
-            # count total voting points between country a and b in current year
-            euro_a_b = eurovision_df[((eurovision_df['From country'] == country_a) &
-                                      (eurovision_df['To country'] == country_b)) |
-                                     ((eurovision_df['From country'] == country_b) &
-                                      (eurovision_df['To country'] == country_a))]
-            votes_euro_a_b_year = sum(euro_a_b[euro_a_b['Year'] == year]['Points'])
-
-            # create (m, v) point (m = friendly matches, v = sum of mutual votes) for country a and b in current year
-            country_pair_index = country_pairs.index((country_a, country_b))
-            matches_in_year[country_pair_index] = num_matches_a_b_year
-            votes_in_year[country_pair_index] = votes_euro_a_b_year
-
-        regression_df[matches_col_name] = matches_in_year
-        regression_df[votes_col_name] = votes_in_year
-
-    # save regression dataframe
-    regression_df.to_csv(regression_data_filename)
-
-    return regression_df, min_year, max_year
+    return points_df, topn_vote_df
 
 
-def examine_regression(regression_df: pd.DataFrame, min_year, max_year):
-    # TODO: visualize data with matplotlib
-    # Assuming your DataFrame is named 'df'
-    # Extract the columns for years, votes, and matches
-    years = regression_df.columns[3::2].str[:4]
-    votes = regression_df.iloc[:, 4::2].melt()['value']
-    matches = regression_df.iloc[:, 3::2].melt()['value']
+def analyze_regression(topn_vote_df: DataFrame, points_df: DataFrame, top_n: int):
+    # extract regression x, y axis
+    topn_votes_values = topn_vote_df.stack().to_numpy()
+    points_values = points_df.stack().to_numpy()
+    topn_votes_values = topn_votes_values.reshape((topn_votes_values.shape[0], 1))
+    points_values = points_values.reshape((points_values.shape[0], 1))
 
-    # Visualize data
-    print(years.shape)
-    print(votes.shape)
-    print(matches.shape)
+    # visualize data distribution
+    plt.scatter(x=topn_votes_values, y=points_values, color='blue', label='Data points')
+    plt.title(f"Eurovision country rank X country votes to top {top_n} rate")
+    plt.xlabel(f"Country votes to top {top_n} rate")
+    plt.ylabel("Country rank")
 
-    # TODO: fix scatter
-    plt.scatter(years, matches, label='Matches')
-    plt.scatter(years, votes, label='Votes')
+    # ---build regression model for analyzed data---
+    # Linear regression
+    lin_model = LinearRegression()
+    lin_model.fit(topn_votes_values, points_values)
+    lin_pred = lin_model.predict(topn_votes_values)
 
-    # Set plot title and labels
-    plt.title('Relationship between Votes and Matches over the Years')
-    plt.xlabel('Year')
-    plt.ylabel('Count')
+    # visualize linear & regression model
+    plt.plot(topn_votes_values, lin_pred, color='red', label='Linear regression')
+    plt.draw()
+    plt.pause(interval=0.01)
+    plt.clf()
 
-    # Add a legend
-    plt.legend()
-
-    # Show the plot
-    plt.show()
-
-    # TODO: calculate regression curve to visualize correlation
-
-    # TODO: visualize correlation and make conclusions
+    """
+    Conclusion:
+    -----------
+    No correlation between voting for top N rate to actual self rank?
+    """
 
 
 def main():
-    # mount regression of matches X eurovision votes dataframe
-    regression_df, min_year, max_year = mount_data(regression_csv_path=regression_data_filename)
+    for top_n in range(3, 20):
+        # mount regression analysis dataframes
+        points_df, topn_vote_df = mount_data(top_n=top_n)
 
-    # analyze regression between matches X eurovision votes
-    examine_regression(regression_df=regression_df, min_year=min_year, max_year=max_year)
+        # analyze regression of ranks per voting for top N rate
+        analyze_regression(topn_vote_df=topn_vote_df,
+                           points_df=points_df,
+                           top_n=top_n)
 
 
 if __name__ == '__main__':
