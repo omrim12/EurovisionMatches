@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 from pandas import DataFrame
 import matplotlib.pyplot as plt
+from sklearn.metrics import mean_squared_error
 from sklearn.linear_model import LinearRegression
 
 mutual_votes_csv = os.path.join(os.getcwd(), "mutual_votes_data.csv")
@@ -60,16 +61,20 @@ def mount_data():
         for from_country, points_given in \
                 eurovision_df[eurovision_df["Year"] == year].groupby(['From country'])[vote_cols]:
             mutual_votes_diff = []
-            for index, voted_country_row in points_given.iterrows():
+            for index, voted_country_row in points_given[points_given['Points'] > 0].iterrows():
                 voted_country_name = voted_country_row['To country']
                 points_voted = voted_country_row['Points']
                 points_earned = eurovision_df[(eurovision_df["Year"] == year) &
                                               (eurovision_df['From country'] == voted_country_name) &
                                               (eurovision_df['To country'] == from_country)]['Points'].tolist()[0]
-                mutual_votes_diff.append(1 / abs(points_voted - points_earned))
+                mutual_votes_diff.append(abs(points_voted - points_earned))
 
-            mutual_votes_rate = 1 / (sum(mutual_votes_diff) / len(mutual_votes_diff))
-            mutual_votes_df.loc[from_country, year] = mutual_votes_rate
+            mutual_votes_diff_rate = (sum(mutual_votes_diff) / len(mutual_votes_diff))
+            mutual_votes_df.loc[from_country, year] = mutual_votes_diff_rate
+
+    # fix voting rate to be the diff from max voting diff rate recorded
+    max_mutual_votes_diff_rate = np.max(mutual_votes_df.stack().to_numpy())
+    mutual_votes_df = mutual_votes_df.applymap(lambda x: max_mutual_votes_diff_rate - x)
 
     # save analyzed regression dataframes
     points_df.to_csv(points_csv)
@@ -113,9 +118,15 @@ def analyze_regression(mutual_votes_df: DataFrame, points_df: DataFrame):
     lin_model.fit(mutual_votes_values, points_values)
     lin_pred = lin_model.predict(mutual_votes_values)
 
+    # calculate accuracy of predictions using MSE method
+    mse = mean_squared_error(mutual_votes_values, lin_pred)
+
     # visualize linear & regression model
-    plt.plot(mutual_votes_values, lin_pred, color='red', label='Linear regression')
+    plt.plot(mutual_votes_values, lin_pred, color='red', label=f'Linear regression (MSE={mse:.2f})')
+    plt.legend()
     plt.show()
+
+
 
     """
     Conclusion:
