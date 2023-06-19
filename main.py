@@ -1,14 +1,26 @@
 import os
+import numpy as np
 import pandas as pd
 from pandas import DataFrame
 import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
 
+mutual_votes_csv = os.path.join(os.getcwd(), "mutual_votes_data.csv")
+points_csv = os.path.join(os.getcwd(), "points.csv")
 COUNTRY_POINTS_BANK = sum([1, 2, 3, 4, 5, 6, 7, 8, 10, 12])
 
 
-def mount_data(top_n: int):
+def mount_data():
+    # mount data from path if already analyzed
+    if os.path.exists(mutual_votes_csv) and os.path.exists(points_csv):
+        points_df = pd.read_csv(points_csv)
+        points_df = points_df.set_index(points_df.columns[0])
+        mutual_votes_df = pd.read_csv(mutual_votes_csv)
+        mutual_votes_df = mutual_votes_df.set_index(mutual_votes_df.columns[0])
+        return points_df, mutual_votes_df
+
     # load eurovision dataframe
+    print("Mounting data...")
     eurovision_df = pd.read_csv("eurovision.csv")
 
     # filter all eurovision scoring metric where a country voted for herself
@@ -34,7 +46,7 @@ def mount_data(top_n: int):
     euro_countries = eurovision_df["From country"].unique()
     euro_years = eurovision_df["Year"].unique()
     points_df = DataFrame(index=euro_countries, columns=euro_years)
-    topn_vote_df = DataFrame(index=euro_countries, columns=euro_years)
+    mutual_votes_df = DataFrame(index=euro_countries, columns=euro_years)
     for year in euro_years:
         # create points (based on received points)
         # per country over years DataFrame
@@ -42,65 +54,87 @@ def mount_data(top_n: int):
             'Points'].sum()
         points_df.loc[:, year] = points_per_country_in_year
 
-        # extract top N countries in euro this year
-        _top_n = points_per_country_in_year.sort_values().tail(top_n).index[::-1]
-
-        # TODO: might need to analyze a different feature
-        # create top N votings rates per country over years dataframe.
-        # (i.e. points given to top N countries divided in total points given)
+        # create mutual vote rate (i.e. mean of diff between points given to points earned)
+        # dataframe per country over years DataFrame
         vote_cols = ['To country', 'Points']
         for from_country, points_given in \
                 eurovision_df[eurovision_df["Year"] == year].groupby(['From country'])[vote_cols]:
-            topn_voted_countries = list(
-                set(points_given[points_given["Points"] > 0]['To country']).intersection(set(_top_n)))
-            topn_votes_rate = sum(
-                points_given[points_given["To country"].isin(topn_voted_countries)]['Points']) / COUNTRY_POINTS_BANK
-            topn_vote_df.loc[from_country, year] = topn_votes_rate
+            mutual_votes_diff = []
+            for index, voted_country_row in points_given.iterrows():
+                voted_country_name = voted_country_row['To country']
+                points_voted = voted_country_row['Points']
+                points_earned = eurovision_df[(eurovision_df["Year"] == year) &
+                                              (eurovision_df['From country'] == voted_country_name) &
+                                              (eurovision_df['To country'] == from_country)]['Points'].tolist()[0]
+                mutual_votes_diff.append(1 / abs(points_voted - points_earned))
 
-    return points_df, topn_vote_df
+            mutual_votes_rate = 1 / (sum(mutual_votes_diff) / len(mutual_votes_diff))
+            mutual_votes_df.loc[from_country, year] = mutual_votes_rate
+
+    # save analyzed regression dataframes
+    points_df.to_csv(points_csv)
+    mutual_votes_df.to_csv(mutual_votes_csv)
+
+    # Visualize data
+    print(f"Points earned DataFrame:\n{points_df}\n\n"
+          f"Mutual votes rate DataFrame:\n{mutual_votes_df}")
+
+    return points_df, mutual_votes_df
 
 
-def analyze_regression(topn_vote_df: DataFrame, points_df: DataFrame, top_n: int):
+def data_distribution(data_dist: DataFrame, name: str):
+    # extract all values
+    data_raw = data_dist.stack().to_numpy()
+
+    # create histogram
+    plt.hist(data_raw, bins=50)
+    plt.xlabel(name)
+    plt.ylabel('Frequency')
+    plt.title(f'Distribution of {name} in eurovision over years')
+    plt.show()
+
+
+def analyze_regression(mutual_votes_df: DataFrame, points_df: DataFrame):
     # extract regression x, y axis
-    topn_votes_values = topn_vote_df.stack().to_numpy()
+    mutual_votes_values = mutual_votes_df.stack().to_numpy()
     points_values = points_df.stack().to_numpy()
-    topn_votes_values = topn_votes_values.reshape((topn_votes_values.shape[0], 1))
+    mutual_votes_values = mutual_votes_values.reshape((mutual_votes_values.shape[0], 1))
     points_values = points_values.reshape((points_values.shape[0], 1))
 
     # visualize data distribution
-    plt.scatter(x=topn_votes_values, y=points_values, color='blue', label='Data points')
-    plt.title(f"Eurovision country rank X country votes to top {top_n} rate")
-    plt.xlabel(f"Country votes to top {top_n} rate")
+    plt.scatter(x=mutual_votes_values, y=points_values, color='blue', label='Data points')
+    plt.title(f"Eurovision country rank X mutual voting rate")
+    plt.xlabel(f"Country mutual voting rate with voted countries")
     plt.ylabel("Country rank")
 
     # ---build regression model for analyzed data---
     # Linear regression
     lin_model = LinearRegression()
-    lin_model.fit(topn_votes_values, points_values)
-    lin_pred = lin_model.predict(topn_votes_values)
+    lin_model.fit(mutual_votes_values, points_values)
+    lin_pred = lin_model.predict(mutual_votes_values)
 
     # visualize linear & regression model
-    plt.plot(topn_votes_values, lin_pred, color='red', label='Linear regression')
-    plt.draw()
-    plt.pause(interval=0.01)
-    plt.clf()
+    plt.plot(mutual_votes_values, lin_pred, color='red', label='Linear regression')
+    plt.show()
 
     """
     Conclusion:
     -----------
-    No correlation between voting for top N rate to actual self rank?
+    
     """
 
 
 def main():
-    for top_n in range(3, 20):
-        # mount regression analysis dataframes
-        points_df, topn_vote_df = mount_data(top_n=top_n)
+    # mount regression analysis dataframes
+    points_df, mutual_votes_df = mount_data()
 
-        # analyze regression of ranks per voting for top N rate
-        analyze_regression(topn_vote_df=topn_vote_df,
-                           points_df=points_df,
-                           top_n=top_n)
+    # show data distribution of both parameters (points vs. mutual voting rate)
+    data_distribution(data_dist=points_df, name="Points")
+    data_distribution(data_dist=mutual_votes_df, name="Mutual voting rate")
+
+    # analyze regression of ranks per mutual voting rate
+    analyze_regression(mutual_votes_df=mutual_votes_df,
+                       points_df=points_df)
 
 
 if __name__ == '__main__':

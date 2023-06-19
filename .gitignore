@@ -1,2 +1,7 @@
+# env dirs
 venv
 .idea/
+
+# regression data
+mutual_votes_data.csv
+points.csv
