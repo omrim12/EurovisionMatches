@@ -13,12 +13,10 @@ COUNTRY_POINTS_BANK = sum([1, 2, 3, 4, 5, 6, 7, 8, 10, 12])
 
 def mount_data():
     # mount data from path if already analyzed
-    if os.path.exists(mutual_votes_csv) and os.path.exists(points_csv):
-        points_df = pd.read_csv(points_csv)
-        points_df = points_df.set_index(points_df.columns[0])
-        mutual_votes_df = pd.read_csv(mutual_votes_csv)
-        mutual_votes_df = mutual_votes_df.set_index(mutual_votes_df.columns[0])
-        return points_df, mutual_votes_df
+    # if os.path.exists(mutual_votes_csv) and os.path.exists(points_csv):
+    #     points_df = pd.read_csv(points_csv)
+    #     points_df = points_df.set_index(points_df.columns[0])
+    #     return points_df
 
     # load eurovision dataframe
     print("Mounting data...")
@@ -26,6 +24,7 @@ def mount_data():
 
     # filter all eurovision scoring metric where a country voted for herself
     eurovision_df = eurovision_df[eurovision_df['Duplicate'] != 'x']
+    eurovision_df = eurovision_df.drop('Duplicate' ,axis=1)
 
     # filter semi-final rows
     eurovision_df = eurovision_df[eurovision_df["(semi-) final"] == 'f']
@@ -46,45 +45,34 @@ def mount_data():
     # create regression dataframes
     euro_countries = eurovision_df["From country"].unique()
     euro_years = eurovision_df["Year"].unique()
-    points_df = DataFrame(index=euro_countries, columns=euro_years)
-    mutual_votes_df = DataFrame(index=euro_countries, columns=euro_years)
+
     for year in euro_years:
         # create points (based on received points)
         # per country over years DataFrame
         points_per_country_in_year = eurovision_df[eurovision_df["Year"] == year].groupby(['To country'])[
             'Points'].sum()
-        points_df.loc[:, year] = points_per_country_in_year
 
-        # create mutual vote rate (i.e. mean of diff between points given to points earned)
-        # dataframe per country over years DataFrame
-        vote_cols = ['To country', 'Points']
-        for from_country, points_given in \
-                eurovision_df[eurovision_df["Year"] == year].groupby(['From country'])[vote_cols]:
-            mutual_votes_diff = []
-            for index, voted_country_row in points_given[points_given['Points'] > 0].iterrows():
-                voted_country_name = voted_country_row['To country']
-                points_voted = voted_country_row['Points']
-                points_earned = eurovision_df[(eurovision_df["Year"] == year) &
-                                              (eurovision_df['From country'] == voted_country_name) &
-                                              (eurovision_df['To country'] == from_country)]['Points'].tolist()[0]
-                mutual_votes_diff.append(abs(points_voted - points_earned))
+        # normalize columns (points each country received per year)
+        # by reducing median value from all
+        all_countries_in_year = eurovision_df[eurovision_df["Year"] == year]["From country"].unique()
+        num_countries_in_year = all_countries_in_year.shape[0]
+        median_country_in_year = points_per_country_in_year.median() / num_countries_in_year
+        print(f"A mid table country in {year} eurovision would receive aprrox. {median_country_in_year} per vote.")
+        # points_df.loc[:, year] -= median_country_in_year
 
-            mutual_votes_diff_rate = (sum(mutual_votes_diff) / len(mutual_votes_diff))
-            mutual_votes_df.loc[from_country, year] = mutual_votes_diff_rate
+        # For all voting that appea
+        eurovision_df.loc[eurovision_df[eurovision_df["Year"] == year].index, "FVR"] = eurovision_df[eurovision_df["Year"] == year]["Points"] / median_country_in_year
 
-    # fix voting rate to be the diff from max voting diff rate recorded
-    max_mutual_votes_diff_rate = np.max(mutual_votes_df.stack().to_numpy())
-    mutual_votes_df = mutual_votes_df.applymap(lambda x: max_mutual_votes_diff_rate - x)
+        first_country_fvr = eurovision_df[(eurovision_df["To country"] == all_countries_in_year[0]) &
+                                            (eurovision_df["Year"] == year)]["FVR"]
 
-    # save analyzed regression dataframes
-    points_df.to_csv(points_csv)
-    mutual_votes_df.to_csv(mutual_votes_csv)
 
-    # Visualize data
-    print(f"Points earned DataFrame:\n{points_df}\n\n"
-          f"Mutual votes rate DataFrame:\n{mutual_votes_df}")
+        # plt.scatter(all_countries_in_year[1:], first_country_fvr)
+        # plt.title(f"FVR to {all_countries_in_year[0]} in year {year}, median={median_country_in_year}")
+        # plt.show()
 
-    return points_df, mutual_votes_df
+    print(eurovision_df[eurovision_df["Year"] == 1975][["From country", "To country", "Year", "Points", "FVR"]])
+    return 5
 
 
 def data_distribution(data_dist: DataFrame, name: str):
@@ -131,21 +119,15 @@ def analyze_regression(mutual_votes_df: DataFrame, points_df: DataFrame):
     """
     Conclusion:
     -----------
-    
     """
 
 
 def main():
     # mount regression analysis dataframes
-    points_df, mutual_votes_df = mount_data()
+    points_df = mount_data()
 
     # show data distribution of both parameters (points vs. mutual voting rate)
-    data_distribution(data_dist=points_df, name="Points")
-    data_distribution(data_dist=mutual_votes_df, name="Mutual voting rate")
-
-    # analyze regression of ranks per mutual voting rate
-    analyze_regression(mutual_votes_df=mutual_votes_df,
-                       points_df=points_df)
+    # data_distribution(dabta_dist=points_df, name="Points")
 
 
 if __name__ == '__main__':
