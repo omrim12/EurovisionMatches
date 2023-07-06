@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import pandas as pd
+from scipy import stats
 from pandas import DataFrame
 import matplotlib.pyplot as plt
 from sklearn.metrics import mean_squared_error
@@ -9,6 +10,15 @@ from sklearn.linear_model import LinearRegression
 mutual_votes_csv = os.path.join(os.getcwd(), "mutual_votes_data.csv")
 points_csv = os.path.join(os.getcwd(), "points.csv")
 COUNTRY_POINTS_BANK = sum([1, 2, 3, 4, 5, 6, 7, 8, 10, 12])
+
+
+def get_unordered_pairs(lst):
+    pairs = []
+    for i in range(len(lst)):
+        for j in range(i + 1, len(lst)):
+            pair = (lst[i], lst[j])
+            pairs.append(pair)
+    return pairs
 
 
 def mount_data():
@@ -24,7 +34,7 @@ def mount_data():
 
     # filter all eurovision scoring metric where a country voted for herself
     eurovision_df = eurovision_df[eurovision_df['Duplicate'] != 'x']
-    eurovision_df = eurovision_df.drop('Duplicate' ,axis=1)
+    eurovision_df = eurovision_df.drop('Duplicate', axis=1)
 
     # filter semi-final rows
     eurovision_df = eurovision_df[eurovision_df["(semi-) final"] == 'f']
@@ -57,64 +67,55 @@ def mount_data():
         all_countries_in_year = eurovision_df[eurovision_df["Year"] == year]["From country"].unique()
         num_countries_in_year = all_countries_in_year.shape[0]
         median_country_in_year = points_per_country_in_year.median() / num_countries_in_year
-        print(f"A mid table country in {year} eurovision would receive aprrox. {median_country_in_year} per vote.")
-        # points_df.loc[:, year] -= median_country_in_year
 
         # For all voting that appea
-        eurovision_df.loc[eurovision_df[eurovision_df["Year"] == year].index, "FVR"] = eurovision_df[eurovision_df["Year"] == year]["Points"] / median_country_in_year
+        eurovision_df.loc[eurovision_df[eurovision_df["Year"] == year].index, "FVR"] = \
+            eurovision_df[eurovision_df["Year"] == year]["Points"] / median_country_in_year
 
-        first_country_fvr = eurovision_df[(eurovision_df["To country"] == all_countries_in_year[0]) &
-                                            (eurovision_df["Year"] == year)]["FVR"]
+    # for each year,
+    # create sum of FVRs table for each from/to country pairs
+    # where x-axis describes From --> to FVRs and y axis describes to --> From FVRs
+    all_pairs = get_unordered_pairs(euro_countries)
+    all_pairs_fvr = DataFrame(index=np.arange(len(all_pairs)), columns=["From", "To", "FVR from to", "FVR to from"])
+    for idx, (country_a, country_b) in enumerate(all_pairs):
+        if country_a != country_b:
+            all_from_to = eurovision_df[(eurovision_df["From country"] == country_a) &
+                                        (eurovision_df["To country"] == country_b)]
+            all_to_from = eurovision_df[(eurovision_df["To country"] == country_a) &
+                                        (eurovision_df["From country"] == country_b)]
+            all_pairs_fvr.loc[idx] = {
+                "From": country_a,
+                "To": country_b,
+                "FVR from to": all_from_to["FVR"].sum(),
+                "FVR to from": all_to_from["FVR"].sum()
+            }
 
-
-        # plt.scatter(all_countries_in_year[1:], first_country_fvr)
-        # plt.title(f"FVR to {all_countries_in_year[0]} in year {year}, median={median_country_in_year}")
-        # plt.show()
-
-    print(eurovision_df[eurovision_df["Year"] == 1975][["From country", "To country", "Year", "Points", "FVR"]])
-    return 5
-
-
-def data_distribution(data_dist: DataFrame, name: str):
-    # extract all values
-    data_raw = data_dist.stack().to_numpy()
-
-    # create histogram
-    plt.hist(data_raw, bins=50)
-    plt.xlabel(name)
-    plt.ylabel('Frequency')
-    plt.title(f'Distribution of {name} in eurovision over years')
     plt.show()
 
+    return all_pairs_fvr
 
-def analyze_regression(mutual_votes_df: DataFrame, points_df: DataFrame):
-    # extract regression x, y axis
-    mutual_votes_values = mutual_votes_df.stack().to_numpy()
-    points_values = points_df.stack().to_numpy()
-    mutual_votes_values = mutual_votes_values.reshape((mutual_votes_values.shape[0], 1))
-    points_values = points_values.reshape((points_values.shape[0], 1))
 
-    # visualize data distribution
-    plt.scatter(x=mutual_votes_values, y=points_values, color='blue', label='Data points')
-    plt.title(f"Eurovision country rank X mutual voting rate")
-    plt.xlabel(f"Country mutual voting rate with voted countries")
-    plt.ylabel("Country rank")
+def analyze_regression(all_pairs_fvr: DataFrame):
+    # extract x, y axis
+    from_to = all_pairs_fvr["FVR from to"].to_numpy().reshape((all_pairs_fvr["FVR from to"].shape[0], 1))
+    to_from = all_pairs_fvr["FVR to from"].to_numpy().reshape((all_pairs_fvr["FVR to from"].shape[0], 1))
 
     # ---build regression model for analyzed data---
-    # Linear regression
+    # scatter data
+    plt.scatter(from_to, to_from)
+
+    # linear regression
     lin_model = LinearRegression()
-    lin_model.fit(mutual_votes_values, points_values)
-    lin_pred = lin_model.predict(mutual_votes_values)
+    lin_model.fit(from_to, to_from)
+    lin_pred = lin_model.predict(from_to)
 
     # calculate accuracy of predictions using MSE method
-    mse = mean_squared_error(mutual_votes_values, lin_pred)
+    mse = mean_squared_error(to_from, lin_pred)
 
-    # visualize linear & regression model
-    plt.plot(mutual_votes_values, lin_pred, color='red', label=f'Linear regression (MSE={mse:.2f})')
+    # visualize linear regression model
+    plt.plot(from_to, lin_pred, color='red', label=f'Linear regression (MSE={mse:.2f})')
     plt.legend()
     plt.show()
-
-
 
     """
     Conclusion:
@@ -122,12 +123,40 @@ def analyze_regression(mutual_votes_df: DataFrame, points_df: DataFrame):
     """
 
 
+def analyze_heatmap(all_pairs_fvr: DataFrame):
+    # extract x, y axis
+    from_to = all_pairs_fvr["FVR from to"].to_numpy().reshape((all_pairs_fvr["FVR from to"].shape[0], 1))
+    to_from = all_pairs_fvr["FVR to from"].to_numpy().reshape((all_pairs_fvr["FVR to from"].shape[0], 1))
+    from_to = np.asarray(from_to)[:, 0]
+    to_from = np.asarray(to_from)[:, 0]
+
+    # # replace NaN values with zeros
+    # fvr_2d[np.where(np.isinf(fvr_2d))] = 0
+
+    # Create a heatmap of the scatter plot
+    heatmap, x_edges, y_edges = np.histogram2d(from_to, to_from, bins=20)
+    extent = [x_edges[0], x_edges[-1], y_edges[0], y_edges[-1]]
+
+    plt.imshow(heatmap.T, extent=extent, origin='lower', cmap='hot')
+    plt.colorbar(label='Counts')
+    plt.xlabel('FVR: country A --> country B')
+    plt.ylabel('FVR: country B --> country A')
+    plt.title('Heatmap of FVR mutuality values')
+    plt.show()
+
+    plt.scatter(from_to, to_from)
+    plt.show()
+
+
 def main():
     # mount regression analysis dataframes
-    points_df = mount_data()
+    all_pairs_fvr = mount_data()
 
-    # show data distribution of both parameters (points vs. mutual voting rate)
-    # data_distribution(dabta_dist=points_df, name="Points")
+    # analyze regression
+    # analyze_regression(all_pairs_fvr=all_pairs_fvr)
+
+    # show heatmap
+    analyze_heatmap(all_pairs_fvr=all_pairs_fvr)
 
 
 if __name__ == '__main__':
