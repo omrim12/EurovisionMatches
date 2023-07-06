@@ -22,12 +22,6 @@ def get_unordered_pairs(lst):
 
 
 def mount_data():
-    # mount data from path if already analyzed
-    # if os.path.exists(mutual_votes_csv) and os.path.exists(points_csv):
-    #     points_df = pd.read_csv(points_csv)
-    #     points_df = points_df.set_index(points_df.columns[0])
-    #     return points_df
-
     # load eurovision dataframe
     print("Mounting data...")
     eurovision_df = pd.read_csv("eurovision.csv")
@@ -59,19 +53,17 @@ def mount_data():
     for year in euro_years:
         # create points (based on received points)
         # per country over years DataFrame
+        countries_in_year = eurovision_df[eurovision_df["Year"] == year]["From country"].unique()
         points_per_country_in_year = eurovision_df[eurovision_df["Year"] == year].groupby(['To country'])[
-            'Points'].sum()
+            'Points'].sum() / (countries_in_year.shape[0] - 1)
 
-        # normalize columns (points each country received per year)
-        # by reducing median value from all
-        all_countries_in_year = eurovision_df[eurovision_df["Year"] == year]["From country"].unique()
-        num_countries_in_year = all_countries_in_year.shape[0]
-        median_country_in_year = points_per_country_in_year.median() / num_countries_in_year
+        for country in countries_in_year:
+            eurovision_df.loc[eurovision_df[(eurovision_df["Year"] == year) &
+                                            (eurovision_df["To country"] == country)].index, "FVR"] = \
+                eurovision_df[(eurovision_df["Year"] == year) & (eurovision_df["To country"] == country)]["Points"] - \
+                points_per_country_in_year[country]
 
-        # For all voting that appea
-        eurovision_df.loc[eurovision_df[eurovision_df["Year"] == year].index, "FVR"] = \
-            eurovision_df[eurovision_df["Year"] == year]["Points"] / median_country_in_year
-
+    # TODO: reduce by mean vote
     # for each year,
     # create sum of FVRs table for each from/to country pairs
     # where x-axis describes From --> to FVRs and y axis describes to --> From FVRs
@@ -117,11 +109,6 @@ def analyze_regression(all_pairs_fvr: DataFrame):
     plt.legend()
     plt.show()
 
-    """
-    Conclusion:
-    -----------
-    """
-
 
 def analyze_heatmap(all_pairs_fvr: DataFrame):
     # extract x, y axis
@@ -129,9 +116,6 @@ def analyze_heatmap(all_pairs_fvr: DataFrame):
     to_from = all_pairs_fvr["FVR to from"].to_numpy().reshape((all_pairs_fvr["FVR to from"].shape[0], 1))
     from_to = np.asarray(from_to)[:, 0]
     to_from = np.asarray(to_from)[:, 0]
-
-    # # replace NaN values with zeros
-    # fvr_2d[np.where(np.isinf(fvr_2d))] = 0
 
     # Create a heatmap of the scatter plot
     heatmap, x_edges, y_edges = np.histogram2d(from_to, to_from, bins=20)
@@ -152,11 +136,20 @@ def main():
     # mount regression analysis dataframes
     all_pairs_fvr = mount_data()
 
+    import ipdb
+    ipdb.set_trace()
+
     # analyze regression
-    # analyze_regression(all_pairs_fvr=all_pairs_fvr)
+    analyze_regression(all_pairs_fvr=all_pairs_fvr)
 
     # show heatmap
     analyze_heatmap(all_pairs_fvr=all_pairs_fvr)
+
+    # TODO: show clustering, statistics, conclusions
+    # TODO: consider normalizing data in some method
+    # TODO: show additional conclusions about diff column:
+    #  e.g. all_pairs_fvr.loc[all_pairs_fvr.index, "DIFF"] =
+    #  abs(all_pairs_fvr["FVR from to"] - all_pairs_fvr["FVR to from"])
 
 
 if __name__ == '__main__':
