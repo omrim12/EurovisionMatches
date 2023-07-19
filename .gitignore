@@ -2,10 +2,11 @@
 venv
 .idea/
 
-# regression data
-mutual_votes_data.csv
+# regression dataframes
 points.csv
+abnormal_votes_data.csv
+countries_geo.csv
+mutual_votes_data.csv
 
-# final project review
-Final Project.odt
-final_project.odt
+# final project overview
+final_project_overview.pdf
