@@ -3,9 +3,7 @@ venv
 .idea/
 
 # regression dataframes
-points.csv
 abnormal_votes_data.csv
-countries_geo.csv
 mutual_votes_data.csv
 
 # final project overview
